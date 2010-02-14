@@ -1,0 +1,15 @@
+aclocal.m4
+autom4te.cache
+autoscan-*.log
+build-aux/depcomp
+build-aux/install-sh
+build-aux/missing
+config.h.in
+configure
+configure.scan
+COPYING
+depcomp
+INSTALL
+install-sh
+missing
+NEWS

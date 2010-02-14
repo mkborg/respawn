@@ -1,0 +1,16 @@
+2009.11.21
+
+	* 0.3.3 version:
+
+	* respawn.c: Apply "setlinebuf()" to "stdout" and "stderr" to
+	reduce buffering delays.
+
+2010.02.14
+
+	* 0.3.4 version:
+
+	* respawn.c: Print human-readable timestamp.
+	* ASSERT.h, ASSERT.c, DEBUG.h: debugging functions.
+	* COMPILER.h: compiler's options.
+	* LOG.h, LOG.c: run time logging functions.
+	* x_time.h, x_time.c: time manipulation functions.

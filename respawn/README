@@ -1,0 +1,17 @@
+INTRODUCTION
+
+    "Unix Way" (or "Linux Way") is to combine several simple tools into
+    complex one necessary to solve the problem. Sometimes one needs tool
+    to repeatedly respawn some application after it's termination. The
+    "respawn" tool is for that purpose.
+
+
+Version 2 - "keep alive" mode
+
+    Sometimes one needs to respawn buggy program but only if it crashes.
+
+
+LICENSE
+
+    This software is distributed under terms of the "GPL-3" license (for
+    details see the "COPYING" file).
