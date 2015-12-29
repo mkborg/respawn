@@ -3,13 +3,17 @@
 ## Makefile.am -- Process this file with automake to produce Makefile.in
 
 bin_PROGRAMS = respawn
-respawn_SOURCES = respawn.c
-respawn_SOURCES += ASSERT.h ASSERT.c
-respawn_SOURCES += COMPILER.h
-respawn_SOURCES += DEBUG.h
-respawn_SOURCES += LOG.h LOG.c
-respawn_SOURCES += options.h options.c
-respawn_SOURCES += x_time.h x_time.c
+respawn_SOURCES = src/respawn.c
+respawn_SOURCES += src/ASSERT.h
+respawn_SOURCES += src/ASSERT.c
+respawn_SOURCES += src/COMPILER.h
+respawn_SOURCES += src/DEBUG.h
+respawn_SOURCES += src/LOG.h
+respawn_SOURCES += src/LOG.c
+respawn_SOURCES += src/options.h
+respawn_SOURCES += src/options.c
+respawn_SOURCES += src/x_time.h
+respawn_SOURCES += src/x_time.c
 #respawn_LDADD = -lrt
 
 AM_CFLAGS = -Wall -Wextra

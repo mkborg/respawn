@@ -4,6 +4,7 @@ autoscan-*.log
 build-aux/depcomp
 build-aux/install-sh
 build-aux/missing
+compile
 config.h.in
 configure
 configure.scan

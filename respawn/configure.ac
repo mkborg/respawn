@@ -2,12 +2,12 @@
 
 ## Process this file with autoconf to produce a configure script.
 
-AC_PREREQ([2.65])
-AC_INIT([respawn], [0.3.4], [mk@pisem.net])
-AC_CONFIG_SRCDIR([respawn.c])
+AC_PREREQ([2.69])
+AC_INIT([respawn], [0.3.4.1], [mk@pisem.net])
+AC_CONFIG_SRCDIR([src/respawn.c])
 #AC_CONFIG_AUX_DIR([build-aux])
 #AM_INIT_AUTOMAKE([1.10.1 -Wall -Werror foreign])
-AM_INIT_AUTOMAKE([1.10.1 -Wall -Werror dist-bzip2])
+AM_INIT_AUTOMAKE([1.15 -Wall -Werror no-dist-gzip dist-xz subdir-objects])
 
 # Checks for programs.
 AC_PROG_CC
