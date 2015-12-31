@@ -14,3 +14,11 @@
 	* COMPILER.h: compiler's options.
 	* LOG.h, LOG.c: run time logging functions.
 	* x_time.h, x_time.c: time manipulation functions.
+
+2012.12.31
+
+	* 0.4 version:
+
+	* respawn.c: Pass SIGHUP, SIGINT, SIGQUIT, SIGUSR1, SIGUSR2, SIGTERM
+	signals to child. Terminate itself if child terminated on SIGTERM
+	signal.

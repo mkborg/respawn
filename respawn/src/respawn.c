@@ -1,13 +1,24 @@
-// Copyright (c) 2009-2010 Mikhail Krivtsov
+// Copyright (c) 2009-2010, 2015 Mikhail Krivtsov
 
 // gcc -O2 -Wall -o respawn respawn.c ASSERT.c LOG.c options.c x_time.c -lrt
 // strip --strip-unneeded -R .comment respawn
 
+/*
+    Note: Our task is to indefinitely respawn child. Normally respawning is to
+    be stopped only by SIGTERM sent to us (it is necessary for 'system
+    shutdown').
+
+    Probably sometimes it can be usefull to hide 'respawner' from 'external
+    processes' pretending it is 'our child' by accepting and transferring to
+    child some signals (SIGHUP, SIGINT, SIGQUIT, SIGUSR1, SIGUSR2) sent to us.
+*/
+
 #include "x_time.h"
 
 #include <errno.h>	// EINVAL
+#include <stdbool.h>
 #include <stdio.h>	// fprintf(), printf(), stderr
-#include <stdlib.h>	// EXIT_FAILURE, EXIT_SUCCESS
+#include <stdlib.h>	// EXIT_FAILURE, EXIT_SUCCESS, strtoul()
 #include <string.h>	// strcmp(), strerror()
 #include <sys/wait.h>	// waitpid()
 #include <time.h>	// CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID, struct timespec, clock_gettime()
@@ -15,15 +26,44 @@
 
 //extern char **environ;
 
-#define HANDLE_STOP_CONTINUE
+//#define HANDLE_STOP_CONTINUE
 
-#define MIN_RUN_TIME_SECONDS (15*60)
+#if defined HANDLE_STOP_CONTINUE
+#define WAITPID_FLAGS WUNTRACED | WCONTINUED
+#else
+#define WAITPID_FLAGS 0
+#endif // defined HANDLE_STOP_CONTINUE
+
+#if !defined RESPAWN_SECONDS
+#define RESPAWN_SECONDS 5
+#endif
+
+#define CONSTSTRLEN(s) (sizeof(s)-1)
+#define STRNCMP1(s1, s2) strncmp((s1), (s2), CONSTSTRLEN(s1))
+#define STRNCMP2(s1, s2) strncmp((s1), (s2), CONSTSTRLEN(s2))
 
 typedef struct timespec timespec_t;
 
-int keepalive = 0;
-int quiet = 0;
-int verbose = 0;
+const char * argv0 = "?";
+unsigned respawn_seconds = RESPAWN_SECONDS;
+bool quiet = false;
+bool verbose = false;
+
+#define ERROR_PRINT(fmt, args...) \
+	fprintf(stderr, "%s: " fmt "\n", argv0, ##args)
+
+#define INFO_PRINT(fmt, args...) \
+	fprintf(stdout, "%s: " fmt "\n", argv0, ##args)
+
+#define IF_NOT_QUIET_PRINT(fmt, args...) \
+    do { \
+	if (!quiet) { INFO_PRINT(fmt, ##args); } \
+    } while(0)
+
+#define IF_VERBOSE_PRINT(fmt, args...) \
+    do { \
+	if (verbose) { INFO_PRINT(fmt, ##args); } \
+    } while(0)
 
 void timespec_delta(timespec_t *p_dt, const timespec_t *p_t2, const timespec_t *p_t1)
 {
@@ -51,26 +91,26 @@ void handle_options(int * p_argc, char *** p_argv)
 
 	if ('-' != *p) { break; }
 	++p;
-	    
-	if (0 == strcmp(p, "keepalive")) {
-	    keepalive = 1;
-	    if (!quiet) { printf("'%s' mode\n", p); }
-	    --*p_argc; ++*p_argv;
-	    continue;
-	}
 
 	if (0 == strcmp(p, "quiet")) {
-	    verbose = 0;
-	    quiet = 1;
-	    if (!quiet) { printf("'%s' mode\n", p); }
+	    verbose = false;
+	    quiet = true;
+	    IF_NOT_QUIET_PRINT("'%s' mode", p);
 	    --*p_argc; ++*p_argv;
 	    continue;
 	}
 
 	if (0 == strcmp(p, "verbose")) {
-	    quiet = 0;
-	    verbose = 1;
-	    if (!quiet) { printf("'%s' mode\n", p); }
+	    quiet = false;
+	    verbose = true;
+	    IF_NOT_QUIET_PRINT("'%s' mode", p);
+	    --*p_argc; ++*p_argv;
+	    continue;
+	}
+
+	if (0 == STRNCMP2(p, "respawn_seconds=")) {
+	    respawn_seconds = strtoul(p+CONSTSTRLEN("respawn_seconds="), NULL, 0);
+	    IF_NOT_QUIET_PRINT("respawn_seconds=%u", respawn_seconds);
 	    --*p_argc; ++*p_argv;
 	    continue;
 	}
@@ -79,34 +119,54 @@ void handle_options(int * p_argc, char *** p_argv)
     }
 }
 
-//int main(int argc, char * argv[])
-int main(int argc, char ** argv)
-//int main(int argc, char * argv[], char * envv[])
+pid_t sighandler_child_pid = 0;
+bool sigterm_received = false;
+
+void sighandler(int signum)
 {
-    char * argv0 = argv[0];
+    if (SIGTERM == signum) { sigterm_received = true; }
+
+    if (sighandler_child_pid > 0) {
+	IF_VERBOSE_PRINT("delivering received signal %i to 'child'", signum);
+	kill(sighandler_child_pid, signum);
+    } else {
+	IF_VERBOSE_PRINT("there is no 'child' to deliver received signal %i", signum);
+    }
+}
+
+int main(int argc, char ** argv)
+{
+    argv0 = argv[0];
     --argc; ++argv;
 
     setlinebuf(stdout);
     setlinebuf(stderr);
 
-    //printf("environ=%p envv=%p\n", environ, envv);
-    //environ = envv;
-
     handle_options(&argc, &argv);
 
     if (argc<1) {
 	fprintf(stderr, "Usage: %s [options] filename [args...]\n", argv0);
+	fprintf(stderr, "  suported options:\n");
+	fprintf(stderr, "    --quiet\n");
+	fprintf(stderr, "    --respawn_seconds=MIN_RESPAWN_SECONDS\n");
+	fprintf(stderr, "    --verbose\n");
 	return EXIT_FAILURE;
     }
 
-    for(;;) {
-	pid_t child_pid;
+    signal(SIGHUP , sighandler); //  1 FIXME: shall we handle 'SIGHUP'?
+    signal(SIGINT , sighandler); //  2 Ctrl-C
+    signal(SIGQUIT, sighandler); //  3 FIXME: shall we handle 'SIGQUIT'?
+    signal(SIGUSR1, sighandler); // 10
+    signal(SIGUSR2, sighandler); // 12
+    signal(SIGTERM, sighandler); // 15 Used on system shutdown
+
+    while(!sigterm_received) {
 
 	struct timespec t1;
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t1) < 0) {
 	    int l_errno = errno;
-	    fprintf(stderr, "%s: clock_gettime() errno=%i '%s'\n", argv0, l_errno, strerror(l_errno));
+	    ERROR_PRINT("clock_gettime() errno=%i '%s'", l_errno, strerror(l_errno));
 	    return EXIT_FAILURE;
 	}
 	if (verbose) {
@@ -114,111 +174,109 @@ int main(int argc, char ** argv)
 	    char time_string[TIME_STRING_LEN+1];
 	    get_time(&tv);
 	    time2string(time_string, sizeof(time_string), &tv);
-	    printf("%s: timestamp='%s'\n", argv0, time_string);
+	    INFO_PRINT("timestamp='%s'", time_string);
 
-	    printf("%s: t1=%lu.%09lu\n", argv0, (unsigned long) t1.tv_sec, t1.tv_nsec);
+	    INFO_PRINT("t1=%lu.%09lu", (unsigned long) t1.tv_sec, t1.tv_nsec);
 	}
 
-	if (!quiet) { printf("%s: invoking fork()\n", argv0); }
+	IF_NOT_QUIET_PRINT("invoking fork()");
 
-	child_pid = fork();
+	pid_t child_pid = fork();
 	if (child_pid < 0) { // error
 
 	    int l_errno = errno;
-	    fprintf(stderr, "%s: fork() errno=%i '%s'\n", argv0, l_errno, strerror(l_errno));
+	    ERROR_PRINT("fork() errno=%i '%s'", l_errno, strerror(l_errno));
 	    return EXIT_FAILURE;
 
 	} else if (child_pid == 0) { // child
 
-	    //if (verbose) { printf("%s: child: I am child process\n", argv0); }
-
-	    if (!quiet) { printf("%s: child[%ld]: invoking exec*(%s)\n", argv0, (long)getpid(), argv[0]); }
-	    // Uses "extern char **environ" for environment. Searches PATH.
+	    IF_NOT_QUIET_PRINT("child[%ld]: invoking exec*(%s)", (long)getpid(), argv[0]);
+	    // Note: 'execvp()' searches PATH using 'environment' from 'extern
+	    // char **environ'. Returns in case of error only.
 	    execvp(argv[0], argv);
 
 	    int l_errno = errno;
-	    fprintf(stderr, "%s: child: exec*() errno=%i '%s'\n", argv0, l_errno, strerror(l_errno));
+	    ERROR_PRINT("child: exec*() errno=%i '%s'", l_errno, strerror(l_errno));
 	    return EXIT_FAILURE;
 
 	} else { // parent
 
+	    sighandler_child_pid = child_pid; // There is 'child' for 'sighandler'
+
+	    IF_NOT_QUIET_PRINT("parent[%ld]: invoking waitpid(%ld)", (long)getpid(), (long)child_pid);
 	    int status;
+	    pid_t waitpid_result = waitpid(child_pid, &status, 0);
+	    if (waitpid_result < 0) {
+		int l_errno = errno;
+		ERROR_PRINT("parent: waitpid() errno=%i '%s'", l_errno, strerror(l_errno));
+		return EXIT_FAILURE;
+	    }
 
-	    //if (verbose) { printf("%s: parent: I am parent process\n", argv0); }
+	    sighandler_child_pid = 0; // There is no 'child' for 'sighandler'
 
-	    for(;;) {
-		pid_t pid;
-		if (!quiet) { printf("%s: parent[%ld]: invoking waitpid(%ld)\n", argv0, (long)getpid(), (long)child_pid); }
-#if defined HANDLE_STOP_CONTINUE
-		pid = waitpid(child_pid, &status, WUNTRACED | WCONTINUED);
-#else
-		pid = waitpid(child_pid, &status, 0);
-#endif // defined HANDLE_STOP_CONTINUE
-
-		if (verbose) { 
-		    timeval_t tv;
-		    struct timespec t2;
-		    struct timespec dt;
-		    unsigned days;
-		    unsigned hours;
-		    unsigned minutes;
-		    unsigned seconds;
-		    char time_string[TIME_STRING_LEN+1];
-		    if (clock_gettime(CLOCK_MONOTONIC, &t2) < 0) {
-			int l_errno = errno;
-			fprintf(stderr, "%s: clock_gettime() errno=%i '%s'\n", argv0, l_errno, strerror(l_errno));
-			return EXIT_FAILURE;
-		    }
-
-		    get_time(&tv);
-		    time2string(time_string, sizeof(time_string), &tv);
-		    printf("%s: timestamp='%s'\n", argv0, time_string);
-
-		    printf("%s: t2=%lu.%09lu\n", argv0, (unsigned long) t2.tv_sec, t2.tv_nsec);
-		    timespec_delta(&dt, &t2, &t1);
-		    seconds = dt.tv_sec;
-		    days = seconds / (24 * 60 * 60);
-		    seconds -= days * (24 * 60 * 60);
-		    hours = seconds / (60 * 60);
-		    seconds -= hours * (60 * 60);
-		    minutes = seconds / 60;
-		    seconds -= minutes * 60;
-		    printf("%s: dt=%lu.%09lu (days=%u hours=%u minutes=%u seconds=%u)\n", argv0, (unsigned long) dt.tv_sec, dt.tv_nsec, days, hours, minutes, seconds);
-		}
-
-		//if (verbose) { printf("%s: parent: pid=%i status=0x%X/%i\n", argv0, pid, status, status); }
-		if (WIFEXITED(status)) {
-		    if (!quiet) { printf("%s: parent: child process terminated normally with status=0x%02X/%i\n", argv0, WEXITSTATUS(status), WEXITSTATUS(status)); }
-		    if (keepalive) {
-			return WEXITSTATUS(status);
-		    }
-		    break;
-		} else if (WIFSIGNALED(status)) {
-		    if (!quiet) { printf("%s: parent: child process was terminated by a signal=0x%02X/%i\n", argv0, WTERMSIG(status), WTERMSIG(status)); }
-		    break;
-#if defined HANDLE_STOP_CONTINUE
-		} else if (WIFSTOPPED(status)) {
-		    if (!quiet) { printf("%s: parent: child process was stopped by a signal=0x%02X/%i\n", argv0, WSTOPSIG(status), WSTOPSIG(status)); }
-		} else if (WIFCONTINUED(status)) {
-		    if (!quiet) { printf("%s: parent: child process was resumed by SIGCONT signal\n", argv0); }
-#endif // defined HANDLE_STOP_CONTINUE
-		} else {
-		    fprintf(stderr, "%s: parent: child process terminated in unexpected way\n", argv0);
-		    break;
-		}
-	    } // waitpid loop
-
-	    t1.tv_sec += MIN_RUN_TIME_SECONDS;
-	    do {
-		if (!quiet) { printf("%s: parent: invoking clock_nanosleep() to slowdown respawn\n", argv0); }
-		if (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &t1, NULL) < 0) {
+	    if (verbose) { 
+		timeval_t tv;
+		struct timespec t2;
+		struct timespec dt;
+		unsigned days;
+		unsigned hours;
+		unsigned minutes;
+		unsigned seconds;
+		char time_string[TIME_STRING_LEN+1];
+		if (clock_gettime(CLOCK_MONOTONIC, &t2) < 0) {
 		    int l_errno = errno;
-		    fprintf(stderr, "%s: child: clock_nanosleep() errno=%i '%s'\n", argv0, l_errno, strerror(l_errno));
-		    if (EINTR == l_errno) { continue; }
+		    ERROR_PRINT("clock_gettime() errno=%i '%s'", l_errno, strerror(l_errno));
+		    return EXIT_FAILURE;
 		}
-	    } while(0);
+
+		get_time(&tv);
+		time2string(time_string, sizeof(time_string), &tv);
+		INFO_PRINT("timestamp='%s'", time_string);
+
+		INFO_PRINT("t2=%lu.%09lu", (unsigned long) t2.tv_sec, t2.tv_nsec);
+		timespec_delta(&dt, &t2, &t1);
+		seconds = dt.tv_sec;
+		days = seconds / (24 * 60 * 60);
+		seconds -= days * (24 * 60 * 60);
+		hours = seconds / (60 * 60);
+		seconds -= hours * (60 * 60);
+		minutes = seconds / 60;
+		seconds -= minutes * 60;
+		INFO_PRINT("dt=%lu.%09lu (days=%u hours=%u minutes=%u seconds=%u)", (unsigned long) dt.tv_sec, dt.tv_nsec, days, hours, minutes, seconds);
+	    }
+
+	    if (WIFEXITED(status)) {
+		IF_NOT_QUIET_PRINT("parent: child process terminated normally with status=0x%02X/%i", WEXITSTATUS(status), WEXITSTATUS(status));
+		if (sigterm_received) {
+		    IF_VERBOSE_PRINT("parent: we shall terminate as well");
+		    return WEXITSTATUS(status);
+		}
+	    } else if (WIFSIGNALED(status)) {
+		IF_NOT_QUIET_PRINT("parent: child process was terminated by a signal=0x%02X/%i", WTERMSIG(status), WTERMSIG(status));
+		if (sigterm_received) {
+		    IF_VERBOSE_PRINT("parent: we shall terminate as well");
+		    return EXIT_SUCCESS;
+		}
+	    } else {
+		ERROR_PRINT("parent: child process terminated in unexpected way");
+		return EXIT_FAILURE;
+	    }
+
+	    t1.tv_sec += respawn_seconds;
+	    IF_NOT_QUIET_PRINT("parent: invoking clock_nanosleep() to slowdown respawn");
+	    int clock_nanosleep_result = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &t1, NULL);
+	    // Normally 'clock_nanosleep()' can be interrupted by signal only
+	    if (clock_nanosleep_result) {
+		if (EINTR != clock_nanosleep_result) {
+		    ERROR_PRINT("parent: clock_nanosleep() unexpectedly returned %i '%s'", clock_nanosleep_result, strerror(clock_nanosleep_result));
+		}
+		// Interrupted 'clock_nanosleep()' means that respawning shall
+		// be finished (even if signal is not SIGTERM)
+		IF_VERBOSE_PRINT("parent: we shall terminate since 'clock_nanosleep()' was interrupted by signal");
+		return EXIT_SUCCESS;
+	    }
 	} // parent
-    } // fork loop
+    } // main loop
 
     return EXIT_SUCCESS;
 }

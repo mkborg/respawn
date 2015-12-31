@@ -31,8 +31,7 @@ dist_noinst_SCRIPTS += 40_build-make.sh
 dist_noinst_SCRIPTS += 51_build-make_install.sh
 dist_noinst_SCRIPTS += 52_build-make_install-strip.sh
 dist_noinst_SCRIPTS += 61_build-make_dist.sh
-dist_noinst_SCRIPTS += 63_build-make_dist-bzip2.sh
-dist_noinst_SCRIPTS += 64_build-make_dist-lzma.sh
+dist_noinst_SCRIPTS += 62_build-make_dist-xz.sh
 dist_noinst_SCRIPTS += 65_build-make_distcheck.sh
 
 dist_noinst_DATA = _auto-made_files.txt
