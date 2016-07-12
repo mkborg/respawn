@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash -eu
 
 echo "-------------------------------------------------------------------------------"
 # generate "configure.scan" to be used as template for "configure.ac"

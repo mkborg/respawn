@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash -eu
 
 X_FILES="$(< _auto-made_files.txt)"
 #echo "X_FILES='${X_FILES}'"
