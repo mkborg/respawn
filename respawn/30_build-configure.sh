@@ -19,8 +19,8 @@ if [ ! -d ${X_BUILD_DIR} ] ; then
     mkdir ${X_BUILD_DIR}
 fi
 
-echo cd ${X_BUILD_DIR}
-cd ${X_BUILD_DIR}
-
-echo ../${X_SRC_DIR_BASENAME}/configure ${X_CONFIGURE_OPTIONS} $*
-../${X_SRC_DIR_BASENAME}/configure ${X_CONFIGURE_OPTIONS} $*
+(
+    set -x
+    cd ${X_BUILD_DIR}
+    ../${X_SRC_DIR_BASENAME}/configure ${X_CONFIGURE_OPTIONS} $*
+)
