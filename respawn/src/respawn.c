@@ -146,9 +146,9 @@ int main(int argc, char ** argv)
 
     if (argc<1) {
 	fprintf(stderr, "Usage: %s [options] filename [args...]\n", argv0);
-	fprintf(stderr, "  suported options:\n");
+	fprintf(stderr, "  supported options:\n");
 	fprintf(stderr, "    --quiet\n");
-	fprintf(stderr, "    --respawn_seconds=MIN_RESPAWN_SECONDS\n");
+	fprintf(stderr, "    --respawn_seconds=MIN_RESPAWN_SECONDS (default is %u)\n", RESPAWN_SECONDS);
 	fprintf(stderr, "    --verbose\n");
 	return EXIT_FAILURE;
     }
