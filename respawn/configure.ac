@@ -3,7 +3,7 @@
 ## Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([respawn], [0.4.2], [mikhail.krivtsov@gmail.com])
+AC_INIT([respawn], [0.4.3], [mikhail.krivtsov@gmail.com])
 AC_CONFIG_SRCDIR([src/respawn.c])
 #AC_CONFIG_AUX_DIR([build-aux])
 #AM_INIT_AUTOMAKE([1.15 -Wall -Werror no-dist-gzip dist-xz subdir-objects foreign])
