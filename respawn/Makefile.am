@@ -1,4 +1,4 @@
-## CopyRight (c) 2009-2010 Mikhail Krivtsov
+## CopyRight (c) 2009-2010,2015-2016 Mikhail Krivtsov
 
 ## Makefile.am -- Process this file with automake to produce Makefile.in
 
