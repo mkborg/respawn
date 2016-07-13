@@ -145,6 +145,8 @@ int main(int argc, char ** argv)
     handle_options(&argc, &argv);
 
     if (argc<1) {
+	// PACKAGE_STRING="${PACKAGE_NAME} ${PACKAGE_VERSION}"
+	fprintf(stderr, "%s %s\n", PACKAGE_NAME, PACKAGE_VERSION);
 	fprintf(stderr, "Usage: %s [options] filename [args...]\n", argv0);
 	fprintf(stderr, "  supported options:\n");
 	fprintf(stderr, "    --quiet\n");
